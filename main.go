@@ -10,6 +10,7 @@ import (
 	"github.com/valkey-io/valkey-glide/go/v2/config"
 	"github.com/valkey-io/valkey-glide/go/v2/pipeline"
 	"io"
+	"math"
 )
 
 type jsonMultiRequest struct {
@@ -42,7 +43,7 @@ func arrayAnyToNestedString(array []any) [][]string {
 
 func nestedStrToNestedInt(array [][]string) [][]uint64 {
 	var tmp [][]uint64
-	for i, _ := range array {
+	for i := range array {
 		tmp = append(tmp, []uint64{})
 		for _, element2 := range array[i] {
 			packed := binary.LittleEndian.Uint64([]byte(element2))
@@ -83,14 +84,47 @@ func extractOffsetPairs(nestedInts [][]uint64) ([][]uint32, [][]uint32) {
 	return ids, off
 }
 
-func determinePeak(nestedInts [][]uint64, clientOffsets []uint32) int {
-	// var counterMap = make(map[uint32]map[uint32]int)
+func roundto(n float64, m float64) int32 {
+	return int32(math.Round(n/m) * m)
+}
+
+func determinePeak(nestedInts [][]uint64, clientOffsets []uint32) {
+	var counterMap = make(map[uint32]map[int32]int)
 	//    songid     offset  count
 	songIds, offsets := extractOffsetPairs(nestedInts)
-	if (len(songIds) == len(offsets)) && (len(clientOffsets) == len(offsets)) {
-		print("all the same length just checking. ")
+	if len(songIds) != len(offsets) || len(clientOffsets) != len(offsets) {
+		fmt.Println("Bad lists in determinePeak. Lengths don't match")
+		return
 	}
-	return 0
+
+	for i, element := range songIds {
+		for j, element2 := range element {
+			if counterMap[element2] == nil {
+				counterMap[element2] = make(map[int32]int)
+			}
+			delta := int32(offsets[i][j]) - int32(clientOffsets[i])
+
+			binSize := int32(15)
+			binnedDelta := (delta / binSize) * binSize
+			counterMap[element2][binnedDelta]++
+		}
+	}
+
+	var peakSongID uint32
+	var peakOffset int32
+	var peakCount int
+
+	for songID, offsetMap := range counterMap {
+		for offset, count := range offsetMap {
+			if count > peakCount {
+				peakCount = count
+				peakSongID = songID
+				peakOffset = offset
+			}
+		}
+	}
+
+	fmt.Printf("Most common pair: songID=%d, offset=%d, count=%d\n", peakSongID, peakOffset, peakCount)
 }
 
 func handleMultiGetLookup(client *glide.Client, c *gin.Context) {
