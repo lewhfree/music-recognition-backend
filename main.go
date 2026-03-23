@@ -3,14 +3,15 @@ package main
 import (
 	"context"
 	"encoding/binary"
-	"encoding/json"
+	// "encoding/json"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	glide "github.com/valkey-io/valkey-glide/go/v2"
 	"github.com/valkey-io/valkey-glide/go/v2/config"
 	"github.com/valkey-io/valkey-glide/go/v2/pipeline"
-	"io"
+	// "io"
 	"math"
+	"net/http"
 )
 
 type jsonMultiRequest struct {
@@ -46,10 +47,15 @@ func nestedStrToNestedInt(array [][]string) [][]uint64 {
 	for i := range array {
 		tmp = append(tmp, []uint64{})
 		for _, element2 := range array[i] {
-			packed := binary.LittleEndian.Uint64([]byte(element2))
+			byteData := []byte(element2)
+			if len(byteData) < 8 {
+				fmt.Println("data longer than 46 bit")
+				continue
+			}
+			packed := binary.LittleEndian.Uint64(byteData)
 			tmp[i] = append(tmp[i], packed)
-			songId, offset := unpackFrom64(packed)
-			fmt.Printf("SongID=%d, Offset=%d\n", songId, offset)
+			// songId, offset := unpackFrom64(packed)
+			// fmt.Printf("SongID=%d, Offset=%d\n", songId, offset)
 		}
 	}
 
@@ -88,13 +94,13 @@ func roundto(n float64, m float64) int32 {
 	return int32(math.Round(n/m) * m)
 }
 
-func determinePeak(nestedInts [][]uint64, clientOffsets []uint32) {
+func determinePeak(nestedInts [][]uint64, clientOffsets []uint32) uint32 {
 	var counterMap = make(map[uint32]map[int32]int)
 	//    songid     offset  count
 	songIds, offsets := extractOffsetPairs(nestedInts)
 	if len(songIds) != len(offsets) || len(clientOffsets) != len(offsets) {
 		fmt.Println("Bad lists in determinePeak. Lengths don't match")
-		return
+		return 0
 	}
 
 	for i, element := range songIds {
@@ -124,19 +130,14 @@ func determinePeak(nestedInts [][]uint64, clientOffsets []uint32) {
 		}
 	}
 
-	fmt.Printf("Most common pair: songID=%d, offset=%d, count=%d\n", peakSongID, peakOffset, peakCount)
+	// fmt.Printf("Most common pair: songID=%d, offset=%d, count=%d\n", peakSongID, peakOffset, peakCount)
+	return peakSongID
 }
 
 func handleMultiGetLookup(client *glide.Client, c *gin.Context) {
-	jsonData, err := io.ReadAll(c.Request.Body)
-	if err != nil {
-		fmt.Println("error reading request body: ", err)
-		return
-	}
 	var hashData jsonMultiRequest
-	err = json.Unmarshal(jsonData, &hashData)
-	if err != nil {
-		fmt.Println("error unmarshalling json: ", err)
+	if err := c.ShouldBindJSON(&hashData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON format"})
 		return
 	}
 
@@ -154,9 +155,14 @@ func handleMultiGetLookup(client *glide.Client, c *gin.Context) {
 	}
 	nestedStrData := arrayAnyToNestedString(data)
 	var nestedIntData [][]uint64 = nestedStrToNestedInt(nestedStrData)
-	determinePeak(nestedIntData, hashData.OffsetList)
-	fmt.Println(hashData.OffsetList)
-	fmt.Println(nestedIntData)
+	id := determinePeak(nestedIntData, hashData.OffsetList)
+	c.JSON(http.StatusOK, gin.H{"songid": id})
+	// fmt.Println(hashData.OffsetList)
+	// fmt.Println(nestedIntData)
+}
+
+func upload(client *glide.Client, c *gin.Context) {
+
 }
 
 func main() {
@@ -171,9 +177,9 @@ func main() {
 		return
 	}
 
+	defer client.Close()
 	router := gin.Default()
 	router.POST("/multiget", func(c *gin.Context) { handleMultiGetLookup(client, c) })
+	router.POST("/upload", func(c *gin.Context) { upload(client, c) })
 	router.Run()
-
-	client.Close()
 }
