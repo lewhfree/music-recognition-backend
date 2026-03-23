@@ -3,13 +3,11 @@ package main
 import (
 	"context"
 	"encoding/binary"
-	// "encoding/json"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	glide "github.com/valkey-io/valkey-glide/go/v2"
 	"github.com/valkey-io/valkey-glide/go/v2/config"
 	"github.com/valkey-io/valkey-glide/go/v2/pipeline"
-	// "io"
 	"math"
 	"net/http"
 )
@@ -54,26 +52,11 @@ func nestedStrToNestedInt(array [][]string) [][]uint64 {
 			}
 			packed := binary.LittleEndian.Uint64(byteData)
 			tmp[i] = append(tmp[i], packed)
-			// songId, offset := unpackFrom64(packed)
-			// fmt.Printf("SongID=%d, Offset=%d\n", songId, offset)
 		}
 	}
 
 	return tmp
 }
-
-// func extractOffsets(nestedInts [][]uint64) ([][]uint32, [][]uint32) {
-// 	var ids [][]uint32
-// 	var off [][]uint32
-// 	for i, element := range nestedInts {
-// 		ids = append(ids, []uint32{})
-// 		off = append(off, []uint32{})
-// 		for _, element2 = range element {
-// 			tmpid, tmpoff = unpackFrom64(element2)
-// 			ids[i][j], off[i][j] = unpackFrom64(nestedInts[i][j])
-// 		}
-// 	}
-// }
 
 func extractOffsetPairs(nestedInts [][]uint64) ([][]uint32, [][]uint32) {
 	var ids [][]uint32
@@ -117,20 +100,17 @@ func determinePeak(nestedInts [][]uint64, clientOffsets []uint32) uint32 {
 	}
 
 	var peakSongID uint32
-	var peakOffset int32
 	var peakCount int
 
 	for songID, offsetMap := range counterMap {
-		for offset, count := range offsetMap {
+		for _, count := range offsetMap {
 			if count > peakCount {
 				peakCount = count
 				peakSongID = songID
-				peakOffset = offset
 			}
 		}
 	}
 
-	// fmt.Printf("Most common pair: songID=%d, offset=%d, count=%d\n", peakSongID, peakOffset, peakCount)
 	return peakSongID
 }
 
@@ -157,8 +137,6 @@ func handleMultiGetLookup(client *glide.Client, c *gin.Context) {
 	var nestedIntData [][]uint64 = nestedStrToNestedInt(nestedStrData)
 	id := determinePeak(nestedIntData, hashData.OffsetList)
 	c.JSON(http.StatusOK, gin.H{"songid": id})
-	// fmt.Println(hashData.OffsetList)
-	// fmt.Println(nestedIntData)
 }
 
 func upload(client *glide.Client, c *gin.Context) {
