@@ -4,12 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-
 	"github.com/gin-gonic/gin"
 	glide "github.com/valkey-io/valkey-glide/go/v2"
 	"github.com/valkey-io/valkey-glide/go/v2/config"
 	"github.com/valkey-io/valkey-glide/go/v2/pipeline"
+	"io"
 )
 
 type jsonMultiRequest struct {
@@ -17,6 +16,19 @@ type jsonMultiRequest struct {
 }
 type jsonSingleRequest struct {
 	Hash string `json:"hash"`
+}
+
+type songId uint32
+type offset uint32
+
+func packTo64(songId uint32, offset uint32) uint64 {
+	return (uint64(songId) << 32) | uint64(offset)
+}
+
+func unpackFrom64(packed uint64) (uint32, uint32) {
+	songId := uint32(packed >> 32)
+	offset := uint32(packed & 0xFFFFFFFF)
+	return songId, offset
 }
 
 func handleSingleHashLookup(client *glide.Client, c *gin.Context) {
@@ -43,7 +55,6 @@ func handleSingleHashLookup(client *glide.Client, c *gin.Context) {
 }
 
 func handleMultiGetLookup(client *glide.Client, c *gin.Context) {
-
 	jsonData, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		fmt.Println("error reading request body: ", err)
@@ -70,13 +81,6 @@ func handleMultiGetLookup(client *glide.Client, c *gin.Context) {
 	}
 
 	fmt.Println("data from batch: ", data)
-	// fmt.Println(hashData.HashList)
-	// keys, err := client.MGet(context.Background(), hashData.HashList)
-	// if err != nil {
-	// 	fmt.Println("Error: ", err)
-	// 	return
-	// }
-	// fmt.Println(keys)
 }
 
 func main() {
