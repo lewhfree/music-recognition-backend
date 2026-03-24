@@ -5,10 +5,13 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 	glide "github.com/valkey-io/valkey-glide/go/v2"
 	"github.com/valkey-io/valkey-glide/go/v2/config"
 	"github.com/valkey-io/valkey-glide/go/v2/pipeline"
 	"net/http"
+	"os"
+	"strconv"
 )
 
 type jsonMultiRequest struct {
@@ -181,9 +184,18 @@ func ingest(client *glide.Client, c *gin.Context) {
 }
 
 func main() {
-	host := "localhost"
-	port := 6379
-
+	err := godotenv.Load()
+	if err != nil {
+		fmt.Println("error loading .env")
+		return
+	}
+	host := os.Getenv("DBHOSTNAME")
+	var port int
+	port, err = strconv.Atoi(os.Getenv("DBPORT"))
+	if err != nil {
+		fmt.Println("error converting port string to port int")
+		return
+	}
 	config := config.NewClientConfiguration().
 		WithAddress(&config.NodeAddress{Host: host, Port: port})
 	client, err := glide.NewClient(config)
