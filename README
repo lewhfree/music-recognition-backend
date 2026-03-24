@@ -1,0 +1,5 @@
+Currently has two endpoints:
+1. Update/add song hashes and matching
+2. Recognize a song
+
+I dedicate all work done in this codebase to the public domain. In jurisdictions where this cannot apply, then it is licensed under the BSD-0.
