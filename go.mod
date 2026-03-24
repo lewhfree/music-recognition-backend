@@ -1,4 +1,4 @@
-module your-project-name
+module music-recognition-backend
 
 go 1.26.1
 
