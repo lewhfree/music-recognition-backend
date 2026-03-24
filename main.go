@@ -8,11 +8,16 @@ import (
 	glide "github.com/valkey-io/valkey-glide/go/v2"
 	"github.com/valkey-io/valkey-glide/go/v2/config"
 	"github.com/valkey-io/valkey-glide/go/v2/pipeline"
-	"math"
 	"net/http"
 )
 
 type jsonMultiRequest struct {
+	HashList   []string `json:"hashlist"`
+	OffsetList []uint32 `json:"offsetlist"`
+}
+
+type jsonMultiUpload struct {
+	SongId     uint32   `json:"id"`
 	HashList   []string `json:"hashlist"`
 	OffsetList []uint32 `json:"offsetlist"`
 }
@@ -71,10 +76,6 @@ func extractOffsetPairs(nestedInts [][]uint64) ([][]uint32, [][]uint32) {
 		}
 	}
 	return ids, off
-}
-
-func roundto(n float64, m float64) int32 {
-	return int32(math.Round(n/m) * m)
 }
 
 func determinePeak(nestedInts [][]uint64, clientOffsets []uint32) uint32 {
@@ -139,8 +140,44 @@ func handleMultiGetLookup(client *glide.Client, c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"songid": id})
 }
 
-func upload(client *glide.Client, c *gin.Context) {
+func ingest(client *glide.Client, c *gin.Context) {
+	var data jsonMultiUpload
+	if err := c.ShouldBindJSON(&data); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON format"})
+		return
+	}
+	if len(data.HashList) != len(data.OffsetList) {
+		fmt.Println("injest hash length doesn't match input offset length")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "hash length doesn't match offset length"})
+		return
+	}
 
+	batch := pipeline.NewStandaloneBatch(false)
+
+	b := make([]byte, 8)
+
+	for i, hash := range data.HashList {
+		offset := data.OffsetList[i]
+
+		packed := packTo64(data.SongId, offset)
+
+		binary.LittleEndian.PutUint64(b, packed)
+		rawBinaryString := string(b)
+
+		batch.RPush(hash, []string{rawBinaryString})
+	}
+
+	_, err := client.Exec(c.Request.Context(), *batch, false)
+	if err != nil {
+		fmt.Println("Error ingesting batch valkey: ", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save to database"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "ingested",
+		"song_id": data.SongId,
+	})
 }
 
 func main() {
@@ -158,6 +195,6 @@ func main() {
 	defer client.Close()
 	router := gin.Default()
 	router.POST("/multiget", func(c *gin.Context) { handleMultiGetLookup(client, c) })
-	router.POST("/upload", func(c *gin.Context) { upload(client, c) })
+	router.POST("/upload", func(c *gin.Context) { ingest(client, c) })
 	router.Run()
 }
