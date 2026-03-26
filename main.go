@@ -197,6 +197,8 @@ func ingest(client *glide.Client, c *gin.Context) {
 
 	metaKey := fmt.Sprintf("meta:%d", dbNewSongId)
 	batch.Set(metaKey, data.Spotify)
+	metaKey2 := fmt.Sprintf("spotify:%s", data.Spotify)
+	batch.Set(metaKey2, string(dbNewSongId))
 	_, err = client.Exec(c.Request.Context(), *batch, false)
 	if err != nil {
 		fmt.Println("Error ingesting batch. valkey: ", err)
