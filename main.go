@@ -20,7 +20,7 @@ type jsonMultiRequest struct {
 }
 
 type jsonMultiUpload struct {
-	SongId     uint32   `json:"id"`
+	Spotify    string   `json:"spotify"`
 	HashList   []string `json:"hashlist"`
 	OffsetList []uint32 `json:"offsetlist"`
 }
@@ -140,7 +140,24 @@ func handleMultiGetLookup(client *glide.Client, c *gin.Context) {
 	nestedStrData := arrayAnyToNestedString(data)
 	var nestedIntData [][]uint64 = nestedStrToNestedInt(nestedStrData)
 	id := determinePeak(nestedIntData, hashData.OffsetList)
-	c.JSON(http.StatusOK, gin.H{"songid": id})
+
+	if id == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "No match found"})
+		return
+	}
+
+	metaKey := fmt.Sprintf("meta:%d", id)
+	spotifyIdResult, err := client.Get(context.Background(), metaKey)
+
+	spotifyId := ""
+	if err == nil && !spotifyIdResult.IsNil() {
+		spotifyId = spotifyIdResult.Value()
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"songid":     id,
+		"spotify_id": spotifyId,
+	})
 }
 
 func ingest(client *glide.Client, c *gin.Context) {
@@ -155,6 +172,14 @@ func ingest(client *glide.Client, c *gin.Context) {
 		return
 	}
 
+	incrRet, err := client.Incr(c.Request.Context(), "next_song_id")
+	if err != nil {
+		fmt.Println("couldn't generate id: ", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "couldn't generate id"})
+		return
+	}
+	dbNewSongId := uint32(incrRet)
+
 	batch := pipeline.NewStandaloneBatch(false)
 
 	b := make([]byte, 8)
@@ -162,7 +187,7 @@ func ingest(client *glide.Client, c *gin.Context) {
 	for i, hash := range data.HashList {
 		offset := data.OffsetList[i]
 
-		packed := packTo64(data.SongId, offset)
+		packed := packTo64(dbNewSongId, offset)
 
 		binary.LittleEndian.PutUint64(b, packed)
 		rawBinaryString := string(b)
@@ -170,16 +195,17 @@ func ingest(client *glide.Client, c *gin.Context) {
 		batch.RPush(hash, []string{rawBinaryString})
 	}
 
-	_, err := client.Exec(c.Request.Context(), *batch, false)
+	metaKey := fmt.Sprintf("meta:%d", dbNewSongId)
+	batch.Set(metaKey, data.Spotify)
+	_, err = client.Exec(c.Request.Context(), *batch, false)
 	if err != nil {
-		fmt.Println("Error ingesting batch valkey: ", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save to database"})
+		fmt.Println("Error ingesting batch. valkey: ", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save to database"})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": "ingested",
-		"song_id": data.SongId,
+		"spotify": data.Spotify,
 	})
 }
 
