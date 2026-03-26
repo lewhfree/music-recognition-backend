@@ -171,6 +171,18 @@ func ingest(client *glide.Client, c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "hash length doesn't match offset length"})
 		return
 	}
+	metaKey0 := fmt.Sprintf("spotify:%s", data.Spotify)
+	things, err := client.Get(context.Background(), metaKey0)
+	if err != nil {
+		fmt.Println("err checking duplicate spotify key")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "err searching for duplicate spotify id"})
+		return
+	}
+
+	if things.IsNil() || (things.Value() == "") {
+		fmt.Println("duplicate key found, not ingesting.")
+		c.JSON(http.StatusOK, gin.H{"message": "spotify key already exists. Not ingesting. "})
+	}
 
 	incrRet, err := client.Incr(c.Request.Context(), "next_song_id")
 	if err != nil {
