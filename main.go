@@ -180,7 +180,6 @@ func ingest(client *glide.Client, c *gin.Context) {
 	}
 
 	if things.Value() != "" || !things.IsNil() {
-		fmt.Println("duplicate key found, not ingesting.")
 		c.JSON(http.StatusOK, gin.H{"message": "spotify key already exists. Not ingesting. "})
 		return
 	}
